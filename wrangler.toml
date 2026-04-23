@@ -6,6 +6,13 @@ compatibility_date = "2024-11-01"
 directory = "./public"
 binding = "ASSETS"
 
+[vars]
+# 逗号分隔的管理员用户名（注册时自动 is_admin=1）
+ADMIN_NAMES = "袁鑫"
+# MiniMax 国际版 API（Key 通过 wrangler secret put MINIMAX_API_KEY 设置）
+MINIMAX_BASE_URL = "https://api.minimaxi.com/v1/text/chatcompletion_v2"
+MINIMAX_MODEL = "MiniMax-M2.7-highspeed"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "teamfeed-db"

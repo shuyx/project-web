@@ -1,5 +1,5 @@
 // ============================================================
-// teamfeed app.js — v2.1 · 专业风格 (unicode header fix)
+// teamfeed app.js — v3.0 · 登录系统 + 无限滚动 + LLM 整理
 // ============================================================
 
 // ---------- Emoji pool & hashing ----------
@@ -11,9 +11,7 @@ const EMOJI_POOL = [
 
 function hashName(name) {
   let h = 0;
-  for (let i = 0; i < name.length; i++) {
-    h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  }
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return h;
 }
 
@@ -24,44 +22,56 @@ function emojiForName(name, offset = 0) {
 
 // ---------- State ----------
 const state = {
-  user: null,
+  auth: null, // { name, emoji, is_admin, token }
   projects: [],
   people: [],
   currentTab: 'all',
   notes: [],
+  hasMore: false,
+  loading: false,
 };
 
 // ---------- LocalStorage ----------
-const LS_USER = 'teamfeed.user';
+const LS_KEY = 'teamfeed.auth';
 
-function loadUser() {
+function loadAuth() {
   try {
-    const raw = localStorage.getItem(LS_USER);
+    const raw = localStorage.getItem(LS_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
 
-function saveUser(user) {
-  localStorage.setItem(LS_USER, JSON.stringify(user));
+function saveAuth(auth) {
+  localStorage.setItem(LS_KEY, JSON.stringify(auth));
+}
+
+function clearAuth() {
+  localStorage.removeItem(LS_KEY);
+  state.auth = null;
 }
 
 // ---------- Toast ----------
 let toastTimer = null;
 function toast(msg, isError = false) {
   const el = document.getElementById('toast');
-  if (!el) { console[isError ? 'error' : 'log'](msg); return; }
+  if (!el) return;
   el.textContent = msg;
   el.className = 'toast show' + (isError ? ' error' : '');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 3000);
 }
 
 // ---------- API ----------
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  // HTTP headers only allow ISO-8859-1; URL-encode author name for Chinese/Unicode chars
-  if (state.user) headers['X-Author-Name'] = encodeURIComponent(state.user.name);
+  if (state.auth?.token) headers['Authorization'] = 'Bearer ' + state.auth.token;
   const resp = await fetch(path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+  if (resp.status === 401 && state.auth) {
+    // token expired / invalid — force re-login
+    clearAuth();
+    showLogin();
+    throw new Error('登录已过期，请重新登录');
+  }
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: resp.statusText }));
     throw new Error(err.error || resp.statusText);
@@ -69,32 +79,66 @@ async function api(path, opts = {}) {
   return resp.json();
 }
 
+async function login(name, password) {
+  const resp = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, password }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || '登录失败');
+  return data; // { name, is_admin, token, registered? }
+}
+
 async function loadConfig() {
   const data = await api('/api/config');
   state.projects = data.projects || [];
   state.people = data.people || [];
+  if (data.me) {
+    // Sync is_admin from server (in case ADMIN_NAMES changed)
+    state.auth = { ...state.auth, is_admin: !!data.me.is_admin };
+    saveAuth(state.auth);
+  }
 }
 
-async function loadFeed() {
-  const q = state.currentTab === 'all' ? '' : `?project=${encodeURIComponent(state.currentTab)}`;
-  const data = await api(`/api/notes${q}`);
-  state.notes = data.notes || [];
+async function loadFeed(append = false) {
+  if (state.loading) return;
+  state.loading = true;
+  try {
+    const params = new URLSearchParams();
+    if (state.currentTab !== 'all') params.set('project', state.currentTab);
+    params.set('limit', '30');
+    if (append && state.notes.length > 0) {
+      params.set('before', state.notes[state.notes.length - 1].created_at);
+    }
+    const data = await api('/api/notes?' + params.toString());
+    state.notes = append ? [...state.notes, ...(data.notes || [])] : (data.notes || []);
+    state.hasMore = !!data.hasMore;
+  } finally {
+    state.loading = false;
+  }
 }
 
 async function postNote(project_id, content) {
   return api('/api/notes', {
     method: 'POST',
     body: JSON.stringify({
-      author_name: state.user.name,
-      author_emoji: state.user.emoji,
       project_id,
       content,
+      author_emoji: state.auth.emoji,
     }),
   });
 }
 
 async function deleteNote(id) {
   return api(`/api/notes/${id}`, { method: 'DELETE' });
+}
+
+async function summarize(timeRange, project) {
+  return api('/api/summarize', {
+    method: 'POST',
+    body: JSON.stringify({ timeRange, project }),
+  });
 }
 
 // ---------- Helpers ----------
@@ -112,47 +156,63 @@ function showLogin() {
   const app = $('app');
   if (modal) modal.hidden = false;
   if (app) app.hidden = true;
-  const input = $('login-name');
-  if (input) {
-    input.value = '';
-    setTimeout(() => input.focus(), 100);
-  }
-  updateLoginEmoji(0);
+  setTimeout(() => $('login-name')?.focus(), 100);
+  updateLoginEmoji();
 }
 
-let loginEmojiOffset = 0;
-
-function updateLoginEmoji(offset) {
-  const input = $('login-name');
-  const name = input ? input.value.trim() : '';
-  loginEmojiOffset = offset;
+function updateLoginEmoji() {
+  const name = $('login-name')?.value.trim() || '';
   const el = $('login-emoji');
-  if (el) el.textContent = emojiForName(name || 'x', offset);
+  if (el) el.textContent = emojiForName(name || 'x');
 }
 
 function setupLogin() {
-  const input = $('login-name');
-  const swap = $('login-emoji-swap');
+  const nameInput = $('login-name');
+  const passInput = $('login-password');
   const submit = $('login-submit');
-  if (input) {
-    input.addEventListener('input', () => { loginEmojiOffset = 0; updateLoginEmoji(0); });
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitLogin(); });
-  }
-  if (swap) swap.addEventListener('click', () => updateLoginEmoji(loginEmojiOffset + 1));
-  if (submit) submit.addEventListener('click', submitLogin);
+
+  nameInput?.addEventListener('input', updateLoginEmoji);
+  nameInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') passInput?.focus(); });
+  passInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitLogin(); });
+  submit?.addEventListener('click', submitLogin);
 }
 
-function submitLogin() {
-  const input = $('login-name');
-  if (!input) return;
-  const name = input.value.trim();
+async function submitLogin() {
+  const name = $('login-name')?.value.trim();
+  const password = $('login-password')?.value;
   if (!name) { toast('请输入名字', true); return; }
-  const emoji = emojiForName(name, loginEmojiOffset);
-  state.user = { name, emoji };
-  saveUser(state.user);
-  const modal = $('login-modal');
-  if (modal) modal.hidden = true;
-  initApp();
+  if (!password || password.length < 4) { toast('密码至少 4 位', true); return; }
+
+  const submit = $('login-submit');
+  if (submit) submit.disabled = true;
+
+  try {
+    const data = await login(name, password);
+    state.auth = {
+      name: data.name,
+      emoji: emojiForName(data.name),
+      is_admin: !!data.is_admin,
+      token: data.token,
+    };
+    saveAuth(state.auth);
+    const modal = $('login-modal');
+    if (modal) modal.hidden = true;
+    if (data.registered) toast('欢迎，已创建账号');
+    else toast('登录成功');
+    initApp();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    if (submit) submit.disabled = false;
+  }
+}
+
+function logout() {
+  clearAuth();
+  state.notes = [];
+  state.projects = [];
+  state.people = [];
+  location.reload();
 }
 
 // ---------- Tabs ----------
@@ -185,9 +245,7 @@ function formatDateLabel(iso) {
   if (dmd === td) return '今天';
   if (dmd === yd) return '昨天';
   const sameYear = d.getFullYear() === now.getFullYear();
-  return sameYear
-    ? `${d.getMonth() + 1}月${d.getDate()}日`
-    : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  return sameYear ? `${d.getMonth() + 1}月${d.getDate()}日` : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
 function formatTime(iso) {
@@ -206,9 +264,7 @@ function formatCardDateTime(iso) {
   if (dmd === td) return `今天 · ${time}`;
   if (dmd === yd) return `昨天 · ${time}`;
   const sameYear = d.getFullYear() === now.getFullYear();
-  const datePart = sameYear
-    ? `${d.getMonth() + 1}月${d.getDate()}日`
-    : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  const datePart = sameYear ? `${d.getMonth() + 1}月${d.getDate()}日` : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
   return `${datePart} · ${time}`;
 }
 
@@ -228,24 +284,15 @@ function groupNotesByDate(notes) {
 
 function highlightContent(raw) {
   let html = escapeHtml(raw);
-
-  // Markdown **bold**
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-  // Money: ¥12,500 / ¥12500.5
   html = html.replace(/¥[\d,]+(?:\.\d+)?/g, m => `<span class="hl-money">${m}</span>`);
-  // Units
   html = html.replace(/\d+(?:\.\d+)?(?:kg|千克|克|吨|mm|cm|m|km|元|万|亿|个|条|份)/gi, m => `<span class="hl-unit">${m}</span>`);
-  // Percent
   html = html.replace(/\d+(?:\.\d+)?%/g, m => `<span class="hl-percent">${m}</span>`);
-  // Dates
   html = html.replace(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/g, m => `<span class="hl-date">${m}</span>`);
   html = html.replace(/\b\d{1,2}[-/]\d{1,2}\b/g, m => `<span class="hl-date">${m}</span>`);
   html = html.replace(/\d{1,2}月\d{1,2}日/g, m => `<span class="hl-date">${m}</span>`);
-  // Time HH:MM
   html = html.replace(/\b\d{1,2}:\d{2}\b/g, m => `<span class="hl-time">${m}</span>`);
 
-  // People dict
   for (const p of state.people) {
     let names = [p.name];
     try {
@@ -253,7 +300,7 @@ function highlightContent(raw) {
         const arr = JSON.parse(p.aliases);
         if (Array.isArray(arr)) names = names.concat(arr);
       }
-    } catch { /* ignore malformed aliases */ }
+    } catch { /* ignore */ }
     for (const n of names) {
       if (!n) continue;
       const esc = String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -288,13 +335,13 @@ function renderFeed() {
   const projectMap = Object.fromEntries(state.projects.map(p => [p.id, p]));
   const showProjectBadge = state.currentTab === 'all';
 
-  el.innerHTML = groups.map(g => `
+  const groupsHtml = groups.map(g => `
     <div class="date-group">
       <div class="date-divider">${escapeHtml(g.label)}</div>
       ${g.notes.map(n => {
         const proj = projectMap[n.project_id];
         const projLabel = proj ? `${proj.emoji ? proj.emoji + ' ' : ''}${escapeHtml(proj.name)}` : escapeHtml(n.project_id);
-        const isMine = state.user && n.author_name === state.user.name;
+        const canDelete = state.auth?.is_admin || n.author_name === state.auth?.name;
         const isSummary = n.is_summary == 1 || n.is_summary === true;
         return `
           <article class="note ${isSummary ? 'is-summary' : ''}" data-id="${escapeHtml(n.id)}">
@@ -303,8 +350,8 @@ function renderFeed() {
                 <span class="small-emoji">${escapeHtml(n.author_emoji)}</span>
                 ${escapeHtml(n.author_name)}
               </span>
-              ${isSummary ? '<span class="summary-badge">AI 整理</span>' : ''}
-              ${isMine ? '<button class="delete-btn" aria-label="删除">✕</button>' : ''}
+              ${isSummary ? '<span class="summary-badge">🤖 AI 整理</span>' : ''}
+              ${canDelete ? '<button class="delete-btn" aria-label="删除">✕</button>' : ''}
             </div>
             <div class="note-body">${highlightContent(n.content)}</div>
             <div class="note-foot">
@@ -317,7 +364,10 @@ function renderFeed() {
     </div>
   `).join('');
 
-  // Delete handlers
+  const sentinel = state.hasMore ? '<div id="feed-sentinel" class="feed-sentinel"><span class="spinner"></span> 加载更多…</div>' : '';
+
+  el.innerHTML = groupsHtml + sentinel;
+
   el.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -335,6 +385,30 @@ function renderFeed() {
       }
     });
   });
+
+  // Setup infinite scroll sentinel
+  setupInfiniteScroll();
+}
+
+// ---------- Infinite scroll ----------
+let scrollObserver = null;
+function setupInfiniteScroll() {
+  const sentinel = $('feed-sentinel');
+  if (!sentinel) return;
+  if (scrollObserver) scrollObserver.disconnect();
+  scrollObserver = new IntersectionObserver(async (entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting && !state.loading && state.hasMore) {
+        try {
+          await loadFeed(true);
+          renderFeed();
+        } catch (e) {
+          toast('加载更多失败：' + e.message, true);
+        }
+      }
+    }
+  }, { rootMargin: '200px' });
+  scrollObserver.observe(sentinel);
 }
 
 // ---------- Composer ----------
@@ -356,7 +430,6 @@ function setupComposer() {
 
   btn.addEventListener('click', submit);
   input.addEventListener('keydown', (e) => {
-    // Enter 发送；Shift+Enter 换行
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       submit();
@@ -407,6 +480,85 @@ function pickProject() {
   });
 }
 
+// ---------- Summarize ----------
+function setupSummarize() {
+  $('btn-summary')?.addEventListener('click', openSummarize);
+  $('sum-close')?.addEventListener('click', closeSummarize);
+  $('sum-run')?.addEventListener('click', runSummarize);
+  $('sum-save')?.addEventListener('click', saveSummaryAsCard);
+  $('sum-close-result')?.addEventListener('click', closeSummarize);
+}
+
+function openSummarize() {
+  const modal = $('summarize-modal');
+  if (modal) modal.hidden = false;
+  $('sum-config').hidden = false;
+  $('sum-result').hidden = true;
+  $('sum-loading').hidden = true;
+}
+
+function closeSummarize() {
+  const modal = $('summarize-modal');
+  if (modal) modal.hidden = true;
+}
+
+let lastSummary = null;
+
+async function runSummarize() {
+  const timeRange = document.querySelector('input[name="sum-time"]:checked')?.value || '7d';
+  const project = document.querySelector('input[name="sum-proj"]:checked')?.value || state.currentTab;
+  $('sum-config').hidden = true;
+  $('sum-loading').hidden = false;
+  try {
+    const data = await summarize(timeRange, project);
+    lastSummary = { ...data, timeRange, project };
+    $('sum-loading').hidden = true;
+    $('sum-result').hidden = false;
+    const meta = data.meta || {};
+    $('sum-meta').textContent = `近 ${meta.days} 天 · ${meta.project === 'all' ? '全部项目' : meta.project} · ${meta.noteCount} 条记录`;
+    $('sum-body').innerHTML = renderMarkdown(data.summary || '');
+  } catch (e) {
+    $('sum-loading').hidden = true;
+    $('sum-config').hidden = false;
+    toast(e.message, true);
+  }
+}
+
+async function saveSummaryAsCard() {
+  if (!lastSummary) return;
+  const meta = lastSummary.meta || {};
+  const header = `📊 近 ${meta.days} 天整理（${meta.project === 'all' ? '全部项目' : meta.project}） · 共 ${meta.noteCount} 条\n\n`;
+  const content = header + (lastSummary.summary || '');
+  const projectId = (meta.project === 'all') ? (state.projects[0]?.id || 'bci') : meta.project;
+  try {
+    const note = await api('/api/notes', {
+      method: 'POST',
+      body: JSON.stringify({ project_id: projectId, content, author_emoji: '🤖', is_summary: 1 }),
+    });
+    state.notes.unshift(note);
+    renderFeed();
+    closeSummarize();
+    toast('已保存为卡片');
+  } catch (e) {
+    toast('保存失败：' + e.message, true);
+  }
+}
+
+// Simple markdown renderer (headings, bold, lists, linebreaks)
+function renderMarkdown(md) {
+  let h = escapeHtml(md);
+  h = h.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  h = h.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  h = h.replace(/(<li>.*?<\/li>(\n|$))+/gs, m => `<ul>${m.replace(/\n/g, '')}</ul>`);
+  h = h.replace(/\n\n/g, '</p><p>');
+  h = '<p>' + h + '</p>';
+  h = h.replace(/<p>(<h\d|<ul)/g, '$1').replace(/(<\/h\d>|<\/ul>)<\/p>/g, '$1');
+  return h;
+}
+
 // ---------- Settings ----------
 function setupSettings() {
   $('btn-settings')?.addEventListener('click', openSettings);
@@ -414,33 +566,8 @@ function setupSettings() {
   $('settings-modal')?.addEventListener('click', (e) => {
     if (e.target === e.currentTarget) closeSettings();
   });
-
-  $('settings-emoji-swap')?.addEventListener('click', () => {
-    const nameInput = $('settings-name');
-    const emojiEl = $('settings-emoji');
-    if (!nameInput || !emojiEl) return;
-    const name = nameInput.value.trim() || state.user?.name || 'x';
-    const current = emojiEl.textContent;
-    let offset = 1;
-    for (let i = 1; i <= EMOJI_POOL.length; i++) {
-      if (emojiForName(name, i) !== current) { offset = i; break; }
-    }
-    emojiEl.textContent = emojiForName(name, offset);
-    emojiEl.dataset.offset = String(offset);
-  });
-
-  $('settings-save-identity')?.addEventListener('click', () => {
-    const nameInput = $('settings-name');
-    const emojiEl = $('settings-emoji');
-    if (!nameInput || !emojiEl) return;
-    const newName = nameInput.value.trim();
-    if (!newName) { toast('名字不能为空', true); return; }
-    const offset = parseInt(emojiEl.dataset.offset || '0');
-    const emoji = emojiForName(newName, offset);
-    state.user = { name: newName, emoji };
-    saveUser(state.user);
-    updateUserHeader();
-    toast('已保存');
+  $('btn-logout')?.addEventListener('click', () => {
+    if (confirm('确认退出登录？')) logout();
   });
 
   $('add-project')?.addEventListener('click', async () => {
@@ -475,20 +602,18 @@ function setupSettings() {
 }
 
 function openSettings() {
-  if (!state.user) return;
-  const nameInput = $('settings-name');
-  const emojiEl = $('settings-emoji');
-  if (nameInput) nameInput.value = state.user.name;
-  if (emojiEl) { emojiEl.textContent = state.user.emoji; emojiEl.dataset.offset = '0'; }
+  if (!state.auth) return;
+  $('settings-me-name').textContent = state.auth.name;
+  $('settings-me-emoji').textContent = state.auth.emoji;
+  $('settings-me-role').textContent = state.auth.is_admin ? '管理员' : '普通成员';
+  $('settings-me-role').className = state.auth.is_admin ? 'role-badge admin' : 'role-badge';
   renderSettingsProjects();
   renderSettingsPeople();
-  const modal = $('settings-modal');
-  if (modal) modal.hidden = false;
+  $('settings-modal').hidden = false;
 }
 
 function closeSettings() {
-  const modal = $('settings-modal');
-  if (modal) modal.hidden = true;
+  $('settings-modal').hidden = true;
 }
 
 function renderSettingsProjects() {
@@ -502,18 +627,13 @@ function renderSettingsProjects() {
   `).join('');
   el.querySelectorAll('[data-del]').forEach(b => {
     b.addEventListener('click', async () => {
-      const pid = b.dataset.del;
-      if (!confirm(`删除项目「${pid}」？该项目下的条目仍会保留，但失去 tab。`)) return;
+      if (!confirm(`删除项目「${b.dataset.del}」？该项目下的条目保留，但失去 tab。`)) return;
       try {
-        await api(`/api/projects/${encodeURIComponent(pid)}`, { method: 'DELETE' });
-        state.projects = state.projects.filter(p => p.id !== pid);
+        await api(`/api/projects/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' });
+        state.projects = state.projects.filter(p => p.id !== b.dataset.del);
         renderSettingsProjects();
         renderTabs();
-        if (state.currentTab === pid) {
-          state.currentTab = 'all';
-          renderTabs();
-          refresh();
-        }
+        if (state.currentTab === b.dataset.del) { state.currentTab = 'all'; renderTabs(); refresh(); }
         toast('项目已删除');
       } catch (e) { toast('删除失败：' + e.message, true); }
     });
@@ -535,11 +655,10 @@ function renderSettingsPeople() {
   `).join('');
   el.querySelectorAll('[data-del]').forEach(b => {
     b.addEventListener('click', async () => {
-      const n = b.dataset.del;
-      if (!confirm(`删除「${n}」？`)) return;
+      if (!confirm(`删除「${b.dataset.del}」？`)) return;
       try {
-        await api(`/api/people/${encodeURIComponent(n)}`, { method: 'DELETE' });
-        state.people = state.people.filter(p => p.name !== n);
+        await api(`/api/people/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' });
+        state.people = state.people.filter(p => p.name !== b.dataset.del);
         renderSettingsPeople();
         renderFeed();
         toast('已删除');
@@ -550,10 +669,24 @@ function renderSettingsPeople() {
 
 // ---------- Header ----------
 function updateUserHeader() {
-  const e = $('user-emoji');
-  const n = $('user-name');
-  if (e && state.user) e.textContent = state.user.emoji;
-  if (n && state.user) n.textContent = state.user.name;
+  if (!state.auth) return;
+  $('user-emoji').textContent = state.auth.emoji;
+  $('user-name').textContent = state.auth.name;
+  $('btn-summary').hidden = false; // show summary button for all logged users
+  // Project picker in summarize dialog needs projects loaded
+  renderSumProjects();
+}
+
+function renderSumProjects() {
+  const el = $('sum-projects-list');
+  if (!el) return;
+  const items = [{ id: 'all', name: '全部项目', emoji: '' }, ...state.projects];
+  el.innerHTML = items.map((p, i) => `
+    <label class="radio-row">
+      <input type="radio" name="sum-proj" value="${escapeHtml(p.id)}" ${i === 0 ? 'checked' : ''}>
+      <span>${p.emoji ? p.emoji + ' ' : ''}${escapeHtml(p.name)}</span>
+    </label>
+  `).join('');
 }
 
 // ---------- Refresh ----------
@@ -569,11 +702,11 @@ async function refresh() {
 
 // ---------- Init ----------
 async function initApp() {
-  const app = $('app');
-  if (app) app.hidden = false;
+  $('app').hidden = false;
   updateUserHeader();
   try {
     await loadConfig();
+    updateUserHeader(); // re-render with projects
     renderTabs();
     await loadFeed();
     renderFeed();
@@ -589,17 +722,17 @@ document.addEventListener('DOMContentLoaded', () => {
     setupLogin();
     setupComposer();
     setupSettings();
+    setupSummarize();
     $('btn-refresh')?.addEventListener('click', refresh);
   } catch (e) {
     console.error('[setup]', e);
     toast('页面设置失败：' + e.message, true);
   }
 
-  const existing = loadUser();
-  if (existing) {
-    state.user = existing;
-    const loginModal = $('login-modal');
-    if (loginModal) loginModal.hidden = true;
+  const existing = loadAuth();
+  if (existing && existing.token) {
+    state.auth = existing;
+    $('login-modal').hidden = true;
     initApp();
   } else {
     showLogin();

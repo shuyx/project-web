@@ -689,3 +689,146 @@ input, textarea {
 
 .muted { color: var(--muted); }
 .small { font-size: 12.5px; }
+.tiny { font-size: 11px; }
+
+/* ============================================================
+   Login (password field)
+   ============================================================ */
+.login-content input[type=password] {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  outline: none;
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.login-content input[type=password]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.12);
+}
+
+/* ============================================================
+   Settings — identity row
+   ============================================================ */
+.me-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  margin-bottom: 10px;
+}
+.user-avatar.big {
+  width: 48px;
+  height: 48px;
+  font-size: 26px;
+}
+.me-col { display: flex; flex-direction: column; gap: 4px; }
+.me-name { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.role-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--muted);
+  align-self: flex-start;
+  border: 1px solid var(--border);
+}
+.role-badge.admin {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-color: rgba(45, 106, 79, 0.3);
+}
+
+/* ============================================================
+   Feed sentinel & spinner
+   ============================================================ */
+.feed-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.spinner.big { width: 28px; height: 28px; border-width: 3px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Summarize modal
+   ============================================================ */
+.summarize-content { max-width: 520px; }
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+.radio-row:hover { background: var(--accent-soft); }
+.radio-row input[type=radio] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.loading-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 16px;
+}
+
+.sum-body {
+  font-size: 14.5px;
+  line-height: 1.7;
+  margin: 14px 0 20px;
+  padding: 16px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.sum-body h1, .sum-body h2, .sum-body h3 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.sum-body h1 { font-size: 17px; }
+.sum-body h2 { font-size: 15.5px; color: var(--accent-ink); }
+.sum-body h3 { font-size: 14.5px; color: var(--muted); }
+.sum-body h3:first-child, .sum-body h2:first-child, .sum-body h1:first-child,
+.sum-body p:first-child { margin-top: 0; }
+.sum-body ul { margin: 6px 0; padding-left: 20px; }
+.sum-body li { margin: 3px 0; }
+.sum-body p { margin: 8px 0; }
+.sum-body strong { font-weight: 600; color: var(--ink); }
+
+.sum-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.sum-actions button { flex: 0 0 auto; padding: 10px 20px; width: auto; }
