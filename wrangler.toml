@@ -9,5 +9,5 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "teamfeed-db"
-database_id = "REPLACE_AFTER_wrangler_d1_create"
+database_id = "62fab320-0a0d-4fe8-bb97-04b2346e251e"
 migrations_dir = "migrations"
