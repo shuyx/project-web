@@ -97,9 +97,14 @@ git push
 
 ## Migration 流程（将来改表结构）
 
+**Migration 走手动**，不在 CI 里自动跑（避免 Token 需要额外 D1:Edit 权限）。
+
 1. 新建 `migrations/0003_xxx.sql`
-2. 本地：`npm run db:migrate:local`
-3. push 后 GitHub Actions 自动 `apply --remote`（或手动 `npm run db:migrate:remote`）
+2. 本地：`npm run db:migrate:local`（测试）
+3. 确认无误：`npm run db:migrate:remote`（应用到生产）
+4. 然后 `git push` → Actions 只部署 Worker 代码
+
+如果你希望以后 CI 自动做 migration，只要去 CF 把 API Token 加上 `Account - D1 - Edit` 权限，然后把 workflow 里的 Deploy step 前加回一个 `d1 migrations apply teamfeed-db --remote` step 即可。
 
 ## 自定义域名（可选）
 
