@@ -87,7 +87,12 @@ app.post('/api/notes', async (c) => {
 // ===== Notes: delete (only own) =====
 app.delete('/api/notes/:id', async (c) => {
   const id = c.req.param('id');
-  const authorName = c.req.header('X-Author-Name');
+  const rawAuthor = c.req.header('X-Author-Name');
+  // Header may be URL-encoded (client side encodes Chinese/Unicode names)
+  let authorName = rawAuthor;
+  if (rawAuthor) {
+    try { authorName = decodeURIComponent(rawAuthor); } catch { /* use raw */ }
+  }
 
   if (!authorName) {
     return c.json({ error: 'missing author header' }, 400);

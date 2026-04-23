@@ -59,7 +59,8 @@ function toast(msg, isError = false) {
 // ---------- API ----------
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  if (state.user) headers['X-Author-Name'] = state.user.name;
+  // HTTP headers only allow ISO-8859-1; URL-encode author name for Chinese/Unicode chars
+  if (state.user) headers['X-Author-Name'] = encodeURIComponent(state.user.name);
   const resp = await fetch(path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: resp.statusText }));
