@@ -1,5 +1,5 @@
 // ============================================================
-// teamfeed app.js — v3.0 · 登录系统 + 无限滚动 + LLM 整理
+// teamfeed app.js — v3.1 · IME composition fix (Chinese input)
 // ============================================================
 
 // ---------- Emoji pool & hashing ----------
@@ -171,9 +171,23 @@ function setupLogin() {
   const passInput = $('login-password');
   const submit = $('login-submit');
 
+  // IME composition tracking for name input (Chinese name support)
+  let nameComposing = false;
+  nameInput?.addEventListener('compositionstart', () => { nameComposing = true; });
+  nameInput?.addEventListener('compositionend', () => {
+    nameComposing = false;
+    updateLoginEmoji();
+  });
+
   nameInput?.addEventListener('input', updateLoginEmoji);
-  nameInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') passInput?.focus(); });
-  passInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitLogin(); });
+  nameInput?.addEventListener('keydown', (e) => {
+    if (nameComposing || e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter') passInput?.focus();
+  });
+  passInput?.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter') submitLogin();
+  });
   submit?.addEventListener('click', submitLogin);
 }
 
@@ -422,6 +436,18 @@ function setupComposer() {
   }
   updateSendBtn();
 
+  // Track IME composition state (Chinese / Japanese / Korean input methods)
+  // Enter pressed while composing = selecting candidate, NOT submit
+  let composing = false;
+  input.addEventListener('compositionstart', () => { composing = true; });
+  input.addEventListener('compositionend', () => {
+    composing = false;
+    // Trigger auto-grow after composition commits
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+    updateSendBtn();
+  });
+
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 200) + 'px';
@@ -430,7 +456,9 @@ function setupComposer() {
 
   btn.addEventListener('click', submit);
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    // Skip if IME is composing. Triple-check: flag + isComposing + keyCode 229
+    if (composing || e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       submit();
     }
