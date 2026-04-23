@@ -1,0 +1,21 @@
+{
+  "name": "teamfeed",
+  "version": "0.1.0",
+  "description": "轻量级项目进展小组协作工具",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create teamfeed-db",
+    "db:migrate:local": "wrangler d1 migrations apply teamfeed-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply teamfeed-db --remote",
+    "db:seed:local": "wrangler d1 execute teamfeed-db --local --file=./migrations/0002_seed.sql",
+    "db:seed:remote": "wrangler d1 execute teamfeed-db --remote --file=./migrations/0002_seed.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  },
+  "dependencies": {
+    "hono": "^4.6.10"
+  }
+}

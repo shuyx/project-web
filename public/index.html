@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#fafaf9">
+  <title>项目进展</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+  <!-- Toast (for errors / info) -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Login modal -->
+  <div id="login-modal" class="modal">
+    <div class="modal-content login-content">
+      <div class="login-hero">
+        <span id="login-emoji" class="hero-emoji">🦊</span>
+      </div>
+      <h2>加入项目协作</h2>
+      <p class="muted">输入你的名字，下次自动记住</p>
+      <input type="text" id="login-name" placeholder="例如：孟总" autocomplete="off" />
+      <div class="emoji-swap-row">
+        <span class="muted small">匹配到的头像</span>
+        <button id="login-emoji-swap" class="ghost-btn small">换一个 🔄</button>
+      </div>
+      <button id="login-submit" class="primary-btn">进入</button>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="app" hidden>
+
+    <header class="app-header">
+      <div class="user-info">
+        <span id="user-emoji" class="user-avatar">🦊</span>
+        <span id="user-name" class="user-name">…</span>
+      </div>
+      <div class="header-actions">
+        <button id="btn-refresh" class="icon-btn" title="刷新" aria-label="刷新">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.5L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.5L3 16"/><path d="M3 21v-5h5"/></svg>
+        </button>
+        <button id="btn-summary" class="icon-btn" title="一键整理（Phase 2）" aria-label="整理" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v4H3zm0 7h12v4H3zm0 7h18v4H3z"/></svg>
+        </button>
+        <button id="btn-settings" class="icon-btn" title="设置" aria-label="设置">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs" id="project-tabs" role="tablist"></nav>
+
+    <main id="feed" class="feed" role="feed"></main>
+
+    <footer class="composer">
+      <div class="composer-box">
+        <textarea id="composer-input" placeholder="写点什么…" rows="1" aria-label="输入内容"></textarea>
+        <button id="composer-submit" class="send-btn" title="发送 (Ctrl/⌘+Enter)" aria-label="发送">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal" hidden>
+    <div class="modal-content settings-content">
+      <div class="settings-header">
+        <h2>设置</h2>
+        <button id="settings-close" class="icon-btn" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <section>
+        <h3>我的身份</h3>
+        <label class="field">
+          <span>名字</span>
+          <input type="text" id="settings-name" />
+        </label>
+        <label class="field">
+          <span>头像</span>
+          <span class="inline-emoji">
+            <span id="settings-emoji" class="user-avatar"></span>
+            <button id="settings-emoji-swap" class="ghost-btn small">换一个 🔄</button>
+          </span>
+        </label>
+        <button id="settings-save-identity" class="primary-btn small">保存</button>
+      </section>
+
+      <section>
+        <h3>项目</h3>
+        <ul class="list" id="settings-projects"></ul>
+        <div class="add-form">
+          <input type="text" id="new-project-id" placeholder="id (英文)" />
+          <input type="text" id="new-project-name" placeholder="项目名" />
+          <input type="text" id="new-project-emoji" placeholder="🙂" maxlength="2" />
+          <button id="add-project" class="primary-btn small">添加</button>
+        </div>
+      </section>
+
+      <section>
+        <h3>关键人物</h3>
+        <ul class="list" id="settings-people"></ul>
+        <div class="add-form">
+          <input type="text" id="new-person-name" placeholder="姓名" />
+          <input type="color" id="new-person-color" value="#2d6a4f" />
+          <button id="add-person" class="primary-btn small">添加</button>
+        </div>
+        <p class="muted small">正文中出现这些名字会自动染色</p>
+      </section>
+    </div>
+  </div>
+
+  <!-- Project picker (for "全部" tab) -->
+  <div id="project-picker-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h3>发到哪个项目？</h3>
+      <div id="project-picker-list" class="picker-list"></div>
+      <button id="project-picker-cancel" class="ghost-btn full">取消</button>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
