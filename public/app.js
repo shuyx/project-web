@@ -1,5 +1,5 @@
 // ============================================================
-// teamfeed app.js — v3.1 · IME composition fix (Chinese input)
+// teamfeed app.js — v3.3 · Phase 3 + clearer action icons
 // ============================================================
 
 // ---------- Emoji pool & hashing ----------
@@ -456,8 +456,8 @@ function renderFeed() {
                 ${escapeHtml(n.author_name)}
               </span>
               ${isSummary ? '<span class="summary-badge">🤖 AI 整理</span>' : ''}
-              ${isSummary ? '' : '<button class="chat-btn" aria-label="问 AI" title="基于这条进展问 AI">💭</button>'}
-              ${canMutate ? '<button class="edit-btn" aria-label="编辑" title="编辑">✎</button>' : ''}
+              ${isSummary ? '' : '<button class="chat-btn" aria-label="问 AI" title="基于这条进展问 AI">🤖</button>'}
+              ${canMutate ? '<button class="edit-btn" aria-label="编辑" title="编辑">✏️</button>' : ''}
               ${canMutate ? '<button class="delete-btn" aria-label="删除">✕</button>' : ''}
             </div>
             <div class="note-body">${isSummary ? applyInlineHighlights(renderMarkdown(n.content)) : highlightContent(n.content)}</div>
@@ -551,7 +551,7 @@ function renderFeed() {
   setupInfiniteScroll();
 }
 
-// ---------- Chat (💭 问 AI) ----------
+// ---------- Chat (🤖 问 AI) ----------
 const chat = {
   parentNoteId: null,
   messages: [],     // [{role, content, ts, savedNoteId?}]
@@ -646,7 +646,7 @@ function renderChatMessages({ loading = false, typing = false } = {}) {
   if (!chat.messages.length && !typing) {
     el.innerHTML = `
       <div class="chat-empty">
-        <div class="big">💭</div>
+        <div class="big">🤖</div>
         <div>基于这条进展问 AI</div>
         <div class="muted tiny" style="margin-top:6px">AI 会读这条主卡 + 已挂载的知识卡 + 项目近期进展作为上下文</div>
       </div>
