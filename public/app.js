@@ -1,5 +1,5 @@
 // ============================================================
-// teamfeed app.js — v3.3 · Phase 3 + clearer action icons
+// teamfeed app.js — v3.4 · One-click user login + remembered pwd
 // ============================================================
 
 // ---------- Emoji pool & hashing ----------
@@ -176,55 +176,124 @@ function escapeHtml(s) {
 function $(id) { return document.getElementById(id); }
 
 // ---------- Login ----------
+// 预设三个团队成员。点头像登录，密码本地记住一次就免密。
+const LOGIN_USERS = ['袁鑫', '夏俊超', '刘超'];
+const PWD_KEY_PREFIX = 'teamfeed.pwd.';
+let loginSelectedUser = null;
+
+function getSavedPwd(name) { return localStorage.getItem(PWD_KEY_PREFIX + name); }
+function saveSavedPwd(name, pwd) { localStorage.setItem(PWD_KEY_PREFIX + name, pwd); }
+function clearSavedPwd(name) { localStorage.removeItem(PWD_KEY_PREFIX + name); }
+function clearAllSavedPwds() { LOGIN_USERS.forEach(clearSavedPwd); }
+
 function showLogin() {
   const modal = $('login-modal');
   const app = $('app');
   if (modal) modal.hidden = false;
   if (app) app.hidden = true;
-  setTimeout(() => $('login-name')?.focus(), 100);
-  updateLoginEmoji();
+  renderLoginUsers();
+  hidePwdPrompt();
 }
 
-function updateLoginEmoji() {
-  const name = $('login-name')?.value.trim() || '';
-  const el = $('login-emoji');
-  if (el) el.textContent = emojiForName(name || 'x');
+function renderLoginUsers() {
+  const container = $('login-users');
+  if (!container) return;
+  container.innerHTML = LOGIN_USERS.map(name => {
+    const emoji = emojiForName(name);
+    const saved = !!getSavedPwd(name);
+    const badge = saved
+      ? '<span class="login-user-saved">✓ 已记住</span>'
+      : '<span class="login-user-pending">需密码</span>';
+    return `
+      <button class="login-user-btn" data-name="${escapeHtml(name)}" type="button">
+        <span class="login-user-emoji">${emoji}</span>
+        <span class="login-user-name">${escapeHtml(name)}</span>
+        ${badge}
+      </button>
+    `;
+  }).join('');
+  container.querySelectorAll('.login-user-btn').forEach(btn => {
+    btn.addEventListener('click', () => onSelectUser(btn.dataset.name));
+  });
+}
+
+async function onSelectUser(name) {
+  loginSelectedUser = name;
+  const heroEl = $('login-emoji');
+  if (heroEl) heroEl.textContent = emojiForName(name);
+
+  const saved = getSavedPwd(name);
+  if (saved) {
+    const ok = await doLogin(name, saved, { silent: true });
+    if (!ok) {
+      // 密码失效
+      clearSavedPwd(name);
+      renderLoginUsers();
+      showPwdPrompt(name, '之前的密码失效了，请重新输入');
+    }
+  } else {
+    showPwdPrompt(name);
+  }
+}
+
+function showPwdPrompt(name, hint) {
+  const usersEl = $('login-users');
+  const pwdEl = $('login-pwd-section');
+  const hintEl = $('login-pwd-hint');
+  const pwdInput = $('login-password');
+  if (usersEl) usersEl.hidden = true;
+  if (pwdEl) pwdEl.hidden = false;
+  if (hintEl) hintEl.textContent = hint || `${name}：请输入密码（首次登录即创建账号）`;
+  if (pwdInput) { pwdInput.value = ''; setTimeout(() => pwdInput.focus(), 80); }
+}
+
+function hidePwdPrompt() {
+  loginSelectedUser = null;
+  const usersEl = $('login-users');
+  const pwdEl = $('login-pwd-section');
+  const heroEl = $('login-emoji');
+  if (usersEl) usersEl.hidden = false;
+  if (pwdEl) pwdEl.hidden = true;
+  if (heroEl) heroEl.textContent = '👋';
 }
 
 function setupLogin() {
-  const nameInput = $('login-name');
   const passInput = $('login-password');
   const submit = $('login-submit');
+  const cancel = $('login-cancel');
+  const forgot = $('login-forgot');
 
-  // IME composition tracking for name input (Chinese name support)
-  let nameComposing = false;
-  nameInput?.addEventListener('compositionstart', () => { nameComposing = true; });
-  nameInput?.addEventListener('compositionend', () => {
-    nameComposing = false;
-    updateLoginEmoji();
-  });
-
-  nameInput?.addEventListener('input', updateLoginEmoji);
-  nameInput?.addEventListener('keydown', (e) => {
-    if (nameComposing || e.isComposing || e.keyCode === 229) return;
-    if (e.key === 'Enter') passInput?.focus();
-  });
   passInput?.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
-    if (e.key === 'Enter') submitLogin();
+    if (e.key === 'Enter') submitPwd();
   });
-  submit?.addEventListener('click', submitLogin);
+  submit?.addEventListener('click', submitPwd);
+  cancel?.addEventListener('click', hidePwdPrompt);
+  forgot?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!LOGIN_USERS.some(n => getSavedPwd(n))) {
+      toast('当前没有记住任何密码');
+      return;
+    }
+    if (confirm('清空三个用户记住的密码？清空后点头像要重新输入一次。')) {
+      clearAllSavedPwds();
+      renderLoginUsers();
+      toast('已清空所有记住的密码');
+    }
+  });
 }
 
-async function submitLogin() {
-  const name = $('login-name')?.value.trim();
-  const password = $('login-password')?.value;
-  if (!name) { toast('请输入名字', true); return; }
-  if (!password || password.length < 4) { toast('密码至少 4 位', true); return; }
+async function submitPwd() {
+  if (!loginSelectedUser) return;
+  const password = $('login-password')?.value || '';
+  if (password.length < 4) { toast('密码至少 4 位', true); return; }
+  const ok = await doLogin(loginSelectedUser, password);
+  if (ok) saveSavedPwd(loginSelectedUser, password);
+}
 
+async function doLogin(name, password, opts = {}) {
   const submit = $('login-submit');
   if (submit) submit.disabled = true;
-
   try {
     const data = await login(name, password);
     state.auth = {
@@ -239,8 +308,10 @@ async function submitLogin() {
     if (data.registered) toast('欢迎，已创建账号');
     else toast('登录成功');
     initApp();
+    return true;
   } catch (e) {
-    toast(e.message, true);
+    if (!opts.silent) toast(e.message || '登录失败', true);
+    return false;
   } finally {
     if (submit) submit.disabled = false;
   }

@@ -17,17 +17,23 @@
   <div id="login-modal" class="modal">
     <div class="modal-content login-content">
       <div class="login-hero">
-        <span id="login-emoji" class="hero-emoji">🦊</span>
+        <span id="login-emoji" class="hero-emoji">👋</span>
       </div>
-      <h2>登录项目协作</h2>
-      <p class="muted small">首次登录将自动创建账号</p>
-      <input type="text" id="login-name" placeholder="名字（如：袁鑫）" autocomplete="off" />
-      <input type="password" id="login-password" placeholder="密码（至少 4 位）" autocomplete="off" />
-      <button id="login-submit" class="primary-btn">登录 / 注册</button>
-      <p class="muted tiny" style="margin-top:12px">
-        · 账号靠名字 + 密码识别<br>
-        · 同名字 + 同密码 = 同一个人（多设备一致）<br>
-        · 首次登录即完成注册
+      <h2>选一下你是谁</h2>
+      <p class="muted small">点头像登录 · 已记住的会直接进</p>
+
+      <div id="login-users" class="login-users"></div>
+
+      <div id="login-pwd-section" hidden>
+        <p id="login-pwd-hint" class="muted small"></p>
+        <input type="password" id="login-password" placeholder="密码（至少 4 位）" autocomplete="off" />
+        <button id="login-submit" class="primary-btn">登录</button>
+        <button id="login-cancel" class="text-btn" type="button">← 换个人</button>
+      </div>
+
+      <p class="muted tiny login-footer-links">
+        · 首次登录即创建账号 · 密码本地记住，下次直接进<br>
+        <a href="#" id="login-forgot">忘了密码？清空记住的凭据</a>
       </p>
     </div>
   </div>
